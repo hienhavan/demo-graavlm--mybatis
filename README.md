@@ -13,7 +13,37 @@ Requirements of this demo application are follows:
 * Writing SQLs on annotation
 * Writing SQLs on XML file
 
-# How to build
+# Gradle 
+
+## How to build 
+
+  Set JAVA_HOME if it has not been set 
+
+```
+  export JAVA_HOME=~/Library/Java/JavaVirtualMachines/graalvm-jdk-23/Contents/Home
+```
+
+  
+  Build an image 
+
+```
+  ./gradlew nativeCompile 
+```  
+
+## How to run 
+
+
+  Run the native image
+
+```
+  ./build/native/nativeCompile/mybatis-native-demo -Djavax.xml.accessExternalDTD=all
+```
+
+
+# Maven
+
+## How to build 
+
 
 Start docker container for building native image.
 
@@ -31,7 +61,7 @@ Build a native image.
 ./mvnw -Pnative clean native:compile
 ```
 
-# Hot to run
+## Hot to run 
 
 Run the native image.
 
@@ -61,3 +91,24 @@ Message[id=2, message=Hello World! on runWithXmlMapper]
 2023-05-08T18:22:46.136Z  INFO 2383 --- [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
 2023-05-08T18:22:46.136Z  INFO 2383 --- [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
 ```
+
+
+# How to fix issue 
+
+```
+  Invalid value type for attribute 'factoryBeanObjectType': java.lang.String
+```
+
+Use version `org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.3`
+
+sees https://github.com/spring-projects/spring-framework/issues/31247
+
+```
+cn-luyang commented on Dec 17, 2023
+
+The upgrade of the mybatis-spring JAR to version 3.0.3
+
+```
+
+
+
