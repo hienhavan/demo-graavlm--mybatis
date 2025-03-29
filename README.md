@@ -30,3 +30,51 @@ Cấu hình này thực hiện các công việc chính:
    - Tránh khởi tạo các class không cần thiết trong quá trình build.  
 
 ---
+## Class chính 
+# MyBatis Native Image - Cấu hình và Giải thích  
+
+## 1. `MyBatisBeanFactoryInitializationAotProcessor`  
+
+### 📌 Chức năng  
+Hỗ trợ Native Image bằng cách đăng ký thông tin cần thiết trước khi biên dịch.  
+
+### 🔹 Công việc chính  
+- Xác định danh sách `MapperFactoryBean` trong **Bean Factory**.  
+- Đăng ký các class cần **reflection**, **proxy**, tài nguyên **XML**.  
+- Hỗ trợ **SQL Provider** (`@SelectProvider`, `@InsertProvider`, …) để tránh lỗi runtime.  
+
+---
+
+## 2. `MyBatisMapperFactoryBeanPostProcessor`  
+
+### 📌 Chức năng  
+Xử lý các Bean `MapperFactoryBean` để đảm bảo hoạt động trong môi trường Native Image.  
+
+### 🔹 Công việc chính  
+- Kiểm tra xem **MyBatis** có tồn tại trong **classpath** không.  
+- Điều chỉnh **constructor** và **target type** của `MapperFactoryBean` nếu cần thiết.  
+
+---
+
+## 3. `MyBatisMapperTypeUtils`  
+
+### 📌 Chức năng  
+Hỗ trợ xử lý **kiểu dữ liệu trả về** và **tham số của Mapper**.  
+
+### 🔹 Công việc chính  
+- Chuyển đổi **`Type` của phương thức Mapper** thành **`Class<?>`**.  
+- Giúp Native Image hiểu rõ về các **kiểu dữ liệu** sử dụng trong MyBatis.  
+
+---
+
+## 🔥 Lưu ý khi sử dụng **MyBatis với GraalVM**  
+
+✅ **Tránh sử dụng reflection không cần thiết**  
+- GraalVM hạn chế reflection, vì vậy cần **đăng ký rõ ràng** để tránh lỗi runtime.  
+
+✅ **Sử dụng `@MapperScan` hợp lý**  
+- Nếu không, có thể gặp lỗi khi Native Image **không nhận diện** được các mapper.  
+
+✅ **Đảm bảo tài nguyên XML được bao gồm**  
+- Các file XML cần được khai báo trong **`resources`** khi build Native Image.  
+
