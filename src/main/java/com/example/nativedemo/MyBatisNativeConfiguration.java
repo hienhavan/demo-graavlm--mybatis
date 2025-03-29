@@ -64,219 +64,255 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * This configuration will move to mybatis-spring-native.
+ * Cấu hình hỗ trợ MyBatis trong môi trường Native Image.
+ * proxyBeanMethods = false nhằm tạo bean nhanh cải thiện hieu suât (ko thông qua proxy spring nhưng làm mất đi tính single
+ * (dùng khi bean chi khoi tao 1 lần mà không cần dùng lại ))
  */
 @Configuration(proxyBeanMethods = false)
 @ImportRuntimeHints(MyBatisNativeConfiguration.MyBaitsRuntimeHintsRegistrar.class)
 public class MyBatisNativeConfiguration {
 
-  @Bean
-  MyBatisBeanFactoryInitializationAotProcessor myBatisBeanFactoryInitializationAotProcessor() {
-    return new MyBatisBeanFactoryInitializationAotProcessor();
-  }
-
-  @Bean
-  static MyBatisMapperFactoryBeanPostProcessor myBatisMapperFactoryBeanPostProcessor() {
-    return new MyBatisMapperFactoryBeanPostProcessor();
-  }
-
-  static class MyBaitsRuntimeHintsRegistrar implements RuntimeHintsRegistrar {
-
-    @Override
-    public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
-      Stream.of(RawLanguageDriver.class,
-          XMLLanguageDriver.class,
-          RuntimeSupport.class,
-          ProxyFactory.class,
-          Slf4jImpl.class,
-          Log.class,
-          JakartaCommonsLoggingImpl.class,
-          Log4j2Impl.class,
-          Jdk14LoggingImpl.class,
-          StdOutImpl.class,
-          NoLoggingImpl.class,
-          SqlSessionFactory.class,
-          PerpetualCache.class,
-          FifoCache.class,
-          LruCache.class,
-          SoftCache.class,
-          WeakCache.class,
-          SqlSessionFactoryBean.class,
-          ArrayList.class,
-          HashMap.class,
-          TreeSet.class,
-          HashSet.class
-      ).forEach(x -> hints.reflection().registerType(x, MemberCategory.values()));
-      Stream.of(
-          "org/apache/ibatis/builder/xml/.*.dtd",
-          "org/apache/ibatis/builder/xml/.*.xsd"
-      ).forEach(hints.resources()::registerPattern);
-    }
-  }
-
-  static class MyBatisBeanFactoryInitializationAotProcessor
-      implements BeanFactoryInitializationAotProcessor, BeanRegistrationExcludeFilter {
-
-    private final Set<Class<?>> excludeClasses = new HashSet<>();
-
-    MyBatisBeanFactoryInitializationAotProcessor() {
-      excludeClasses.add(MapperScannerConfigurer.class);
+    @Bean
+    MyBatisBeanFactoryInitializationAotProcessor myBatisBeanFactoryInitializationAotProcessor() {
+        return new MyBatisBeanFactoryInitializationAotProcessor();
     }
 
-    @Override public boolean isExcludedFromAotProcessing(RegisteredBean registeredBean) {
-      return excludeClasses.contains(registeredBean.getBeanClass());
+    @Bean
+    static MyBatisMapperFactoryBeanPostProcessor myBatisMapperFactoryBeanPostProcessor() {
+        return new MyBatisMapperFactoryBeanPostProcessor();
     }
+    /**
+     * Đăng ký RuntimeHints để hỗ trợ MyBatis khi biên dịch AOT (Ahead-Of-Time).
+     */
+    static class MyBaitsRuntimeHintsRegistrar implements RuntimeHintsRegistrar {
 
-    @Override
-    public BeanFactoryInitializationAotContribution processAheadOfTime(ConfigurableListableBeanFactory beanFactory) {
-      String[] beanNames = beanFactory.getBeanNamesForType(MapperFactoryBean.class);
-      if (beanNames.length == 0) {
-        return null;
-      }
-      return (context, code) -> {
-        RuntimeHints hints = context.getRuntimeHints();
-        for (String beanName : beanNames) {
-          BeanDefinition beanDefinition = beanFactory.getBeanDefinition(beanName.substring(1));
-          PropertyValue mapperInterface = beanDefinition.getPropertyValues().getPropertyValue("mapperInterface");
-          if (mapperInterface != null && mapperInterface.getValue() != null) {
-            Class<?> mapperInterfaceType = (Class<?>) mapperInterface.getValue();
-            if (mapperInterfaceType != null) {
-              registerReflectionTypeIfNecessary(mapperInterfaceType, hints);
-              hints.proxies().registerJdkProxy(mapperInterfaceType);
-              hints.resources()
-                  .registerPattern(mapperInterfaceType.getName().replace('.', '/').concat(".xml"));
-              registerMapperRelationships(mapperInterfaceType, hints);
+        @Override
+        public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
+            // Đăng ký các lớp sử dụng reflection trong MyBatis
+            Stream.of(RawLanguageDriver.class,
+                    XMLLanguageDriver.class,
+                    RuntimeSupport.class,
+                    ProxyFactory.class,
+                    Slf4jImpl.class,
+                    Log.class,
+                    JakartaCommonsLoggingImpl.class,
+                    Log4j2Impl.class,
+                    Jdk14LoggingImpl.class,
+                    StdOutImpl.class,
+                    NoLoggingImpl.class,
+                    SqlSessionFactory.class,
+                    PerpetualCache.class,
+                    FifoCache.class,
+                    LruCache.class,
+                    SoftCache.class,
+                    WeakCache.class,
+                    SqlSessionFactoryBean.class,
+                    ArrayList.class,
+                    HashMap.class,
+                    TreeSet.class,
+                    HashSet.class
+            ).forEach(x -> hints.reflection().registerType(x, MemberCategory.values()));
+            // Đăng ký tài nguyên XML của MyBatis
+            Stream.of(
+                    "org/apache/ibatis/builder/xml/.*.dtd",
+                    "org/apache/ibatis/builder/xml/.*.xsd"
+            ).forEach(hints.resources()::registerPattern);
+        }
+    }
+    /**
+     * Xử lý quá trình khởi tạo bean của MyBatis trong quá trình AOT.
+     */
+    static class MyBatisBeanFactoryInitializationAotProcessor
+            implements BeanFactoryInitializationAotProcessor, BeanRegistrationExcludeFilter {
+
+        private final Set<Class<?>> excludeClasses = new HashSet<>();
+
+        MyBatisBeanFactoryInitializationAotProcessor() {
+            // Loại bỏ MapperScannerConfigurer khỏi quá trình AOT processing
+            excludeClasses.add(MapperScannerConfigurer.class);
+        }
+
+        @Override
+        public boolean isExcludedFromAotProcessing(RegisteredBean registeredBean) {
+            return excludeClasses.contains(registeredBean.getBeanClass());
+        }
+
+        @Override
+        public BeanFactoryInitializationAotContribution processAheadOfTime(ConfigurableListableBeanFactory beanFactory) {
+            String[] beanNames = beanFactory.getBeanNamesForType(MapperFactoryBean.class);
+            if (beanNames.length == 0) {
+                return null;
             }
-          }
+            return (context, code) -> {
+                RuntimeHints hints = context.getRuntimeHints();
+                for (String beanName : beanNames) {
+                    BeanDefinition beanDefinition = beanFactory.getBeanDefinition(beanName.substring(1));
+                    PropertyValue mapperInterface = beanDefinition.getPropertyValues().getPropertyValue("mapperInterface");
+                    if (mapperInterface != null && mapperInterface.getValue() != null) {
+                        Class<?> mapperInterfaceType = (Class<?>) mapperInterface.getValue();
+                        if (mapperInterfaceType != null) {
+                            registerReflectionTypeIfNecessary(mapperInterfaceType, hints);
+                            hints.proxies().registerJdkProxy(mapperInterfaceType);
+                            hints.resources()
+                                    .registerPattern(mapperInterfaceType.getName().replace('.', '/').concat(".xml"));
+                            registerMapperRelationships(mapperInterfaceType, hints);
+                        }
+                    }
+                }
+            };
         }
-      };
-    }
-
-    private void registerMapperRelationships(Class<?> mapperInterfaceType, RuntimeHints hints) {
-      Method[] methods = ReflectionUtils.getAllDeclaredMethods(mapperInterfaceType);
-      for (Method method : methods) {
-        if (method.getDeclaringClass() != Object.class) {
-          ReflectionUtils.makeAccessible(method);
-          registerSqlProviderTypes(method, hints, SelectProvider.class, SelectProvider::value, SelectProvider::type);
-          registerSqlProviderTypes(method, hints, InsertProvider.class, InsertProvider::value, InsertProvider::type);
-          registerSqlProviderTypes(method, hints, UpdateProvider.class, UpdateProvider::value, UpdateProvider::type);
-          registerSqlProviderTypes(method, hints, DeleteProvider.class, DeleteProvider::value, DeleteProvider::type);
-          Class<?> returnType = MyBatisMapperTypeUtils.resolveReturnClass(mapperInterfaceType, method);
-          registerReflectionTypeIfNecessary(returnType, hints);
-          MyBatisMapperTypeUtils.resolveParameterClasses(mapperInterfaceType, method)
-              .forEach(x -> registerReflectionTypeIfNecessary(x, hints));
+        /**
+         * Đăng ký các kiểu dữ liệu liên quan của mapper để đảm bảo chúng được hỗ trợ trong môi trường Native Image.
+         */
+        private void registerMapperRelationships(Class<?> mapperInterfaceType, RuntimeHints hints) {
+            Method[] methods = ReflectionUtils.getAllDeclaredMethods(mapperInterfaceType);
+            for (Method method : methods) {
+                if (method.getDeclaringClass() != Object.class) {
+                    ReflectionUtils.makeAccessible(method);
+                    registerSqlProviderTypes(method, hints, SelectProvider.class, SelectProvider::value, SelectProvider::type);
+                    registerSqlProviderTypes(method, hints, InsertProvider.class, InsertProvider::value, InsertProvider::type);
+                    registerSqlProviderTypes(method, hints, UpdateProvider.class, UpdateProvider::value, UpdateProvider::type);
+                    registerSqlProviderTypes(method, hints, DeleteProvider.class, DeleteProvider::value, DeleteProvider::type);
+                    Class<?> returnType = MyBatisMapperTypeUtils.resolveReturnClass(mapperInterfaceType, method);
+                    registerReflectionTypeIfNecessary(returnType, hints);
+                    MyBatisMapperTypeUtils.resolveParameterClasses(mapperInterfaceType, method)
+                            .forEach(x -> registerReflectionTypeIfNecessary(x, hints));
+                }
+            }
         }
-      }
-    }
-
-    @SafeVarargs
-    private <T extends Annotation> void registerSqlProviderTypes(
-        Method method, RuntimeHints hints, Class<T> annotationType, Function<T, Class<?>>... providerTypeResolvers) {
-      for (T annotation : method.getAnnotationsByType(annotationType)) {
-        for (Function<T, Class<?>> providerTypeResolver : providerTypeResolvers) {
-          registerReflectionTypeIfNecessary(providerTypeResolver.apply(annotation), hints);
+        /**
+         * Đăng ký kiểu dữ liệu của các SQL Provider nếu có.
+         */
+        @SafeVarargs
+        private <T extends Annotation> void registerSqlProviderTypes(
+                Method method, RuntimeHints hints, Class<T> annotationType, Function<T, Class<?>>... providerTypeResolvers) {
+            for (T annotation : method.getAnnotationsByType(annotationType)) {
+                for (Function<T, Class<?>> providerTypeResolver : providerTypeResolvers) {
+                    registerReflectionTypeIfNecessary(providerTypeResolver.apply(annotation), hints);
+                }
+            }
         }
-      }
-    }
 
-    private void registerReflectionTypeIfNecessary(Class<?> type, RuntimeHints hints) {
-      if (!type.isPrimitive() && !type.getName().startsWith("java")) {
-        hints.reflection().registerType(type, MemberCategory.values());
-      }
-    }
-
-  }
-
-  static class MyBatisMapperTypeUtils {
-    private MyBatisMapperTypeUtils() {
-      // NOP
-    }
-
-    static Class<?> resolveReturnClass(Class<?> mapperInterface, Method method) {
-      Type resolvedReturnType = TypeParameterResolver.resolveReturnType(method, mapperInterface);
-      return typeToClass(resolvedReturnType, method.getReturnType());
-    }
-
-    static Set<Class<?>> resolveParameterClasses(Class<?> mapperInterface, Method method) {
-      return Stream.of(TypeParameterResolver.resolveParamTypes(method, mapperInterface))
-          .map(x -> typeToClass(x, x instanceof Class ? (Class<?>) x : Object.class)).collect(Collectors.toSet());
-    }
-
-    private static Class<?> typeToClass(Type src, Class<?> fallback) {
-      Class<?> result = null;
-      if (src instanceof Class<?>) {
-        if (((Class<?>) src).isArray()) {
-          result = ((Class<?>) src).getComponentType();
-        } else {
-          result = (Class<?>) src;
+        /**
+         * Đăng ký kiểu dữ liệu cho reflection nếu cần thiết.
+         */
+        private void registerReflectionTypeIfNecessary(Class<?> type, RuntimeHints hints) {
+            if (!type.isPrimitive() && !type.getName().startsWith("java")) {
+                hints.reflection().registerType(type, MemberCategory.values());
+            }
         }
-      } else if (src instanceof ParameterizedType) {
-        ParameterizedType parameterizedType = (ParameterizedType) src;
-        int index = (parameterizedType.getRawType() instanceof Class
-            && Map.class.isAssignableFrom((Class<?>) parameterizedType.getRawType())
-            && parameterizedType.getActualTypeArguments().length > 1) ? 1 : 0;
-        Type actualType = parameterizedType.getActualTypeArguments()[index];
-        result = typeToClass(actualType, fallback);
-      }
-      if (result == null) {
-        result = fallback;
-      }
-      return result;
+
     }
 
-  }
+    /**
+     * Tiện ích xử lý kiểu dữ liệu của MyBatis Mapper.
+     */
 
-  static class MyBatisMapperFactoryBeanPostProcessor implements MergedBeanDefinitionPostProcessor, BeanFactoryAware {
-
-    private static final org.apache.commons.logging.Log LOG = LogFactory.getLog(
-        MyBatisMapperFactoryBeanPostProcessor.class);
-
-    private static final String MAPPER_FACTORY_BEAN = "org.mybatis.spring.mapper.MapperFactoryBean";
-
-    private ConfigurableBeanFactory beanFactory;
-
-    @Override
-    public void setBeanFactory(BeanFactory beanFactory) {
-      this.beanFactory = (ConfigurableBeanFactory) beanFactory;
-    }
-
-    @Override
-    public void postProcessMergedBeanDefinition(RootBeanDefinition beanDefinition, Class<?> beanType, String beanName) {
-      if (ClassUtils.isPresent(MAPPER_FACTORY_BEAN, this.beanFactory.getBeanClassLoader())) {
-        resolveMapperFactoryBeanTypeIfNecessary(beanDefinition);
-      }
-    }
-
-    private void resolveMapperFactoryBeanTypeIfNecessary(RootBeanDefinition beanDefinition) {
-      if (!beanDefinition.hasBeanClass() || !MapperFactoryBean.class.isAssignableFrom(beanDefinition.getBeanClass())) {
-        return;
-      }
-      if (beanDefinition.getResolvableType().hasUnresolvableGenerics()) {
-        Class<?> mapperInterface = getMapperInterface(beanDefinition);
-        if (mapperInterface != null) {
-          // Exposes a generic type information to context for prevent early initializing
-//          beanDefinition
-//              .setTargetType(ResolvableType.forClassWithGenerics(beanDefinition.getBeanClass(), mapperInterface));
-
-
-          ConstructorArgumentValues constructorArgumentValues = new ConstructorArgumentValues();
-          constructorArgumentValues.addGenericArgumentValue(mapperInterface);
-          beanDefinition.setConstructorArgumentValues(constructorArgumentValues);
-          beanDefinition.setConstructorArgumentValues(constructorArgumentValues);
-          beanDefinition.setTargetType(ResolvableType.forClassWithGenerics(beanDefinition.getBeanClass(), mapperInterface));
+    static class MyBatisMapperTypeUtils {
+        private MyBatisMapperTypeUtils() {
+            // Constructor trống để tránh khởi tạo instance.
         }
-      }
-    }
+        /**
+         * Xác định kiểu dữ liệu trả về của một phương thức trong mapper interface.
+         */
+        static Class<?> resolveReturnClass(Class<?> mapperInterface, Method method) {
+            Type resolvedReturnType = TypeParameterResolver.resolveReturnType(method, mapperInterface);
+            return typeToClass(resolvedReturnType, method.getReturnType());
+        }
+        /**
+         * Xác định các kiểu dữ liệu của tham số trong một phương thức của mapper interface.
+         */
+        static Set<Class<?>> resolveParameterClasses(Class<?> mapperInterface, Method method) {
+            return Stream.of(TypeParameterResolver.resolveParamTypes(method, mapperInterface))
+                    .map(x -> typeToClass(x, x instanceof Class ? (Class<?>) x : Object.class)).collect(Collectors.toSet());
+        }
 
-    private Class<?> getMapperInterface(RootBeanDefinition beanDefinition) {
-      try {
-        return (Class<?>) beanDefinition.getPropertyValues().get("mapperInterface");
-      }
-      catch (Exception e) {
-        LOG.debug("Fail getting mapper interface type.", e);
-        return null;
-      }
-    }
+        /**
+         * Chuyển đổi một kiểu dữ liệu Type sang Class, hỗ trợ các trường hợp generic và mảng.
+         */
+        private static Class<?> typeToClass(Type src, Class<?> fallback) {
+            Class<?> result = null;
+            if (src instanceof Class<?>) {
+                if (((Class<?>) src).isArray()) {
+                    result = ((Class<?>) src).getComponentType();
+                } else {
+                    result = (Class<?>) src;
+                }
+            } else if (src instanceof ParameterizedType) {
+                ParameterizedType parameterizedType = (ParameterizedType) src;
+                int index = (parameterizedType.getRawType() instanceof Class
+                        && Map.class.isAssignableFrom((Class<?>) parameterizedType.getRawType())
+                        && parameterizedType.getActualTypeArguments().length > 1) ? 1 : 0;
+                Type actualType = parameterizedType.getActualTypeArguments()[index];
+                result = typeToClass(actualType, fallback);
+            }
+            if (result == null) {
+                result = fallback;
+            }
+            return result;
+        }
 
-  }
+    }
+    /**
+     * Bộ xử lý để cấu hình và tinh chỉnh MyBatis MapperFactoryBean
+     * nhằm đảm bảo rằng Spring có thể nhận diện đúng kiểu dữ liệu
+     * của các mapper interface trong quá trình khởi tạo bean.
+     */
+
+    static class MyBatisMapperFactoryBeanPostProcessor implements MergedBeanDefinitionPostProcessor, BeanFactoryAware {
+
+        private static final org.apache.commons.logging.Log LOG = LogFactory.getLog(
+                MyBatisMapperFactoryBeanPostProcessor.class);
+
+        private static final String MAPPER_FACTORY_BEAN = "org.mybatis.spring.mapper.MapperFactoryBean";
+
+        private ConfigurableBeanFactory beanFactory;
+
+        @Override
+        public void setBeanFactory(BeanFactory beanFactory) {
+            this.beanFactory = (ConfigurableBeanFactory) beanFactory;
+        }
+
+        @Override
+        public void postProcessMergedBeanDefinition(RootBeanDefinition beanDefinition, Class<?> beanType, String beanName) {
+            // Kiểm tra xem lớp MapperFactoryBean có tồn tại trong classpath không
+            if (ClassUtils.isPresent(MAPPER_FACTORY_BEAN, this.beanFactory.getBeanClassLoader())) {
+                resolveMapperFactoryBeanTypeIfNecessary(beanDefinition);
+            }
+        }
+        /**
+         * Phương thức này kiểm tra nếu bean là một instance của MapperFactoryBean
+         * và nếu kiểu dữ liệu của mapper chưa được xác định rõ ràng, nó sẽ cố gắng gán kiểu phù hợp.
+         */
+        private void resolveMapperFactoryBeanTypeIfNecessary(RootBeanDefinition beanDefinition) {
+            // Nếu bean không có class hoặc không phải MapperFactoryBean thì bỏ qua
+            if (!beanDefinition.hasBeanClass() || !MapperFactoryBean.class.isAssignableFrom(beanDefinition.getBeanClass())) {
+                return;
+            }
+            // Nếu bean chưa xác định được kiểu dữ liệu cụ thể
+            if (beanDefinition.getResolvableType().hasUnresolvableGenerics()) {
+                Class<?> mapperInterface = getMapperInterface(beanDefinition);
+                if (mapperInterface != null) {
+                    // Cấu hình lại bean definition để đảm bảo mapperInterface được truyền đúng
+                    ConstructorArgumentValues constructorArgumentValues = new ConstructorArgumentValues();
+                    constructorArgumentValues.addGenericArgumentValue(mapperInterface);
+                    beanDefinition.setConstructorArgumentValues(constructorArgumentValues);
+                    beanDefinition.setConstructorArgumentValues(constructorArgumentValues);
+                    beanDefinition.setTargetType(ResolvableType.forClassWithGenerics(beanDefinition.getBeanClass(), mapperInterface));
+                }
+            }
+        }
+        /**
+         * Lấy mapper interface từ thuộc tính của bean definition.
+         */
+        private Class<?> getMapperInterface(RootBeanDefinition beanDefinition) {
+            try {
+                return (Class<?>) beanDefinition.getPropertyValues().get("mapperInterface");
+            } catch (Exception e) {
+                LOG.debug("Fail getting mapper interface type.", e);
+                return null;
+            }
+        }
+
+    }
 }
